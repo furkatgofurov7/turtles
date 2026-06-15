@@ -3,7 +3,7 @@ name: Turtles release
 on:
   push:
     tags:
-      - "test-v*"
+      - "v*-test"
   workflow_dispatch:
 
 permissions:
@@ -31,7 +31,7 @@ jobs:
 
     - name: Set test credentials
       run: |
-        echo "DOCKER_USERNAME=furkatgofurov7" >> $GITHUB_ENV
+        echo "DOCKER_USERNAME=furkat007" >> $GITHUB_ENV
         echo "DOCKER_PASSWORD=${{ secrets.DOCKER_PASSWORD }}" >> $GITHUB_ENV
         echo "STAGE_REGISTRY=ghcr.io" >> $GITHUB_ENV
         echo "STAGE_REGISTRY_USERNAME=furkatgofurov7" >> $GITHUB_ENV
@@ -44,9 +44,9 @@ jobs:
         image: turtles
         tag: ${{ env.TAG }}-${{ matrix.tag-suffix }}
         platforms: ${{ matrix.platform }}
-        push-to-public: true
         push-to-prime: false
-        public-repo: furkatgofurov7
+        push-to-public: true
+        public-repo: furkat007
         public-username: ${{ env.DOCKER_USERNAME }}
         public-password: ${{ env.DOCKER_PASSWORD }}
         make-target: push-community-image
@@ -80,7 +80,7 @@ jobs:
     steps:
     - name: Set test credentials
       run: |
-        echo "DOCKER_USERNAME=furkatgofurov7" >> $GITHUB_ENV
+        echo "DOCKER_USERNAME=furkat007" >> $GITHUB_ENV
         echo "DOCKER_PASSWORD=${{ secrets.DOCKER_PASSWORD }}" >> $GITHUB_ENV
         echo "STAGE_REGISTRY=ghcr.io" >> $GITHUB_ENV
         echo "STAGE_REGISTRY_USERNAME=furkatgofurov7" >> $GITHUB_ENV
@@ -105,14 +105,15 @@ jobs:
     - name: Create multi-platform image and push
       shell: bash
       run: |
-        IMAGE="turtles"
         if [ "${{ matrix.image-type }}" = "community" ]; then
-          URL="docker.io/furkatgofurov7/${IMAGE}:${{ env.TAG }}"
+          IMAGE="turtles"
+          URL="docker.io/furkat007/${IMAGE}:${{ env.TAG }}"
           docker buildx imagetools create -t "${URL}" \
             "${URL}-linux-amd64" \
             "${URL}-linux-arm64"
           echo "Pushed multi-platform image: ${URL}"
         elif [ "${{ matrix.image-type }}" = "prime" ]; then
+          IMAGE="turtles"
           URL="${{ env.STAGE_REGISTRY }}/furkatgofurov7/${IMAGE}:${{ env.TAG }}"
           docker buildx imagetools create -t "${URL}" \
             "${URL}-linux-amd64" \
@@ -179,6 +180,6 @@ jobs:
     - merge
     with:
       tag: ${{ github.ref_name }}
-      org: furkatgofurov7
+      org: furkat007
       image: turtles
     secrets: inherit
