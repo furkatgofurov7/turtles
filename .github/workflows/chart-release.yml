@@ -86,6 +86,9 @@ jobs:
             echo "ERROR: No .tgz chart package found in ${{ inputs.release_dir }}"
             exit 1
           fi
+          # EDGE CASE 1 TEST: uncomment to simulate upload failure on first run,
+          # then re-run the job to verify --clobber recovers correctly
+          exit 1
           gh release upload "${{ inputs.tag }}" "${CHART_FILE}" --clobber
           echo "Uploaded $(basename ${CHART_FILE})"
 
