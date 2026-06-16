@@ -88,7 +88,7 @@ jobs:
           fi
           # EDGE CASE 1 TEST: uncomment to simulate upload failure on first run,
           # then re-run the job to verify --clobber recovers correctly
-          exit 1
+          # exit 1
           gh release upload "${{ inputs.tag }}" "${CHART_FILE}" --clobber
           echo "Uploaded $(basename ${CHART_FILE})"
 
