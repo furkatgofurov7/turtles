@@ -23,6 +23,8 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctr "sigs.k8s.io/controller-runtime/pkg/controller"
@@ -160,6 +162,7 @@ func (r *CAPIProviderReconciler) BuildWithManager(ctx context.Context, mgr ctrl.
 		rec.Store,
 		rec.Upgrade,
 		rec.Install,
+		r.addAzureServiceOperatorFix,
 		rec.ReportStatus,
 		r.setConditions,
 		rec.Finalize,
@@ -507,4 +510,69 @@ func (r *CAPIProviderReconciler) syncSecrets(ctx context.Context) (*controller.R
 
 func (r *CAPIProviderReconciler) waitForClusterctlConfigUpdate(ctx context.Context) (*controller.Result, error) {
 	return provider.WaitForClusterctlConfigUpdate(ctx, r.Client)
+}
+
+// addAzureServiceOperatorFix is a phase that applies a need-a-cert workaround to the azureserviceoperator-webhook-service Service.
+// The workaround is to apply the need-a-cert.cattle.io/ca-bundle-mode=ca-only annotation to the Service, in order to tell
+// wrangler to only include the CA cert and reduce the azureserviceoperator-mutating-webhook-configuration MutatingWebhookConfiguration
+// size on etcd. For more information see: https://github.com/rancher/turtles/issues/2452
+//
+// This fix needs to be applied from CAPZ version v1.24 to v1.26 and possibly longer.
+// A solution upstream is expected in CAPZ v1.27 that should be using ASO v2.19 where the webhook configuration has been split into multiple.
+//
+// The addAzureServiceOperatorFix phase is meant to run post Install. This ensures that on a provider update (or first install) the fix is applied.
+//
+// In order to remove this fix, a similar `deleteAzureServiceOperatorFix` phase can be implemented.
+// This can be exactly the same logic, with `delete(asoService.Annotations, "need-a-cert.cattle.io/ca-bundle-mode")` instead.
+// The delete phase can also be equally scheduled post Install.
+func (r *CAPIProviderReconciler) addAzureServiceOperatorFix(ctx context.Context) (*controller.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	if !feature.Gates.Enabled(feature.NoCertManager) {
+		// Wrangler is not in use. Nothing to do.
+		return &controller.Result{}, nil
+	}
+
+	capiProvider, ok := r.Provider.(*turtlesv1.CAPIProvider)
+	if !ok {
+		// Not a CAPIProvider, nothing to do.
+		return &controller.Result{}, nil
+	}
+
+	if capiProvider.ProviderName() != provider.AzureProvider {
+		// Not Azure Provider, nothing to do.
+		return &controller.Result{}, nil
+	}
+
+	// Fetch the ASO webhook Service
+	log.Info("Adding need-a-cert.cattle.io/ca-bundle-mode to ASO Service")
+	asoService := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azureserviceoperator-webhook-service",
+			Namespace: capiProvider.Namespace,
+		},
+	}
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(asoService), asoService); err != nil {
+		return &controller.Result{}, fmt.Errorf("fetching %s/%s Service: %w", capiProvider.Namespace, "azureserviceoperator-webhook-service", err)
+	}
+
+	// Add the "need-a-cert.cattle.io/ca-bundle-mode: ca-only" annotation.
+	patchHelper, err := patch.NewHelper(asoService, r.Client)
+	if err != nil {
+		return &controller.Result{}, fmt.Errorf("initializing patch helper for ASO service: %w", err)
+	}
+
+	if asoService.Annotations == nil {
+		asoService.Annotations = map[string]string{}
+	}
+
+	asoService.Annotations["need-a-cert.cattle.io/ca-bundle-mode"] = "ca-only"
+
+	if err := patchHelper.Patch(ctx, asoService); err != nil {
+		return &controller.Result{}, fmt.Errorf("patching ASO Service: %w", err)
+	}
+
+	log.Info("ASO Service successfully patched")
+
+	return &controller.Result{}, nil
 }
